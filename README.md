@@ -26,7 +26,7 @@ git clone https://github.com/ChanningYuan/mcp-builder.git .claude/skills/mcp-bui
 
 ## 前置条件
 
-1. 你的组织能访问[钉钉 MCP 市场](https://mcp.dingtalk.com)；
+1. 你的组织能访问[钉钉 MCP 市场](https://aihub.dingtalk.com)；
 2. 你的账号在本组织有**开放平台开发者权限**（没有则所有调用统一报 `no_permission`，找组织管理员开通）；
 3. 你要包装的接口本身可以调通（涉鉴权时=密钥有效且接口权限已授权）。
 

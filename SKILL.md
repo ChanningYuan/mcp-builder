@@ -14,7 +14,7 @@ description: 从 API 接口材料搭建钉钉 MCP 服务与工具：建服务、
 
 ## 接入前自查（2 分钟，卡住的多数是这三条）
 
-1. 当前组织能访问 [钉钉 MCP 市场](https://mcp.dingtalk.com) 并打开「MCP开发脚手架」详情页（取接入地址的入口）；
+1. 当前组织能访问 [钉钉 MCP 市场](https://aihub.dingtalk.com) 并打开「MCP开发脚手架」详情页（取接入地址的入口）；
 2. 当前账号在本组织有**开放平台开发者权限**——没有的话所有脚手架调用统一报 `no_permission`，先找组织管理员开通；
 3. 目标接口本身可调用成功（涉鉴权时=密钥有效且接口权限/scope 已授权）——接口自己都调不通，建成工具也只会把同一个错误换个地方报。
 
@@ -24,7 +24,7 @@ description: 从 API 接口材料搭建钉钉 MCP 服务与工具：建服务、
 
 - 未连接时，向用户发出如下引导（**逐字照发**）：
 
-  > 1. 前往 [钉钉MCP开发脚手架（mcpId=10478）](https://mcp.dingtalk.com/#/detail?mcpId=10478&detailType=marketMcpDetail)
+  > 1. 前往 [钉钉MCP开发脚手架（mcpId=10487）](https://aihub.dingtalk.com/#detail?mcpId=10487&detailType=marketMcpDetail)
   > 2. 登录钉钉账号，复制页面右侧的 **StreamableHTTP URL**
   > 3. 将 URL 发给我，我来帮你写入并完成初始化
 
