@@ -33,7 +33,7 @@ skill 通过「MCP 开发脚手架」（serverName=`mcp-kit`）这个 MCP 的工
 | 工具 | 必填参数 | 出参（三件套外） | 用途 |
 |------|----------|------------------|------|
 | `mcp_tool_create_http` | mcpId, name, title, description, **httpInfo**, apiInputs, toolInputs, inputMappings, apiOutputs, toolOutputs, outputMappings（11 项必填；可选 **timeout**/**onlyOriginalKeys**） | `toolId`(string) | 建 **http 型**工具，**存草稿**。三段式见 api-to-tool.md |
-| `mcp_tool_debug` | mcpId, toolId, value（可选 versionId；**带鉴权必传 credentialId**） | `executeSuccess`, **`toolOutput`(object,判读位)**, `toolInput`, `rawOutput`, `time` | **草稿态即可真跑**。value 直接是入参对象（不包 Body 层）。映射后结果看顶层 `toolOutput` |
+| `mcp_tool_debug` | mcpId, toolId, value（可选 versionId；**带鉴权必传 credentialId**） | **`executeSuccess`(分水岭)**, **`toolOutput`(object,判读位)**, `toolInput`, `rawOutput`, `time` | **草稿态即可真跑**。value 直接是入参对象（不包 Body 层）。映射后结果看顶层 `toolOutput`。⚠️`rawOutput` **不是**映射前原始响应（是 toolOutput 外包一层 Body，映射取不到值时同样为空）——判据表与排障见 troubleshooting.md |
 | `mcp_tool_publish` | mcpId, toolId | 仅三件套 | **写·闸门**。草稿转正线上版。发布时做出参 schema 向后兼容校验。发布前必须用户复核。⚠️ 带鉴权服务必须**先 `mcp_credential_bind` 再 publish**——顺序反了实例卡草稿态且不可恢复（auth-credentials.md） |
 | `mcp_tool_update_http` | mcpId, toolId + create_http 同款必填集（可选 timeout/onlyOriginalKeys） | 仅三件套 | 编辑 http 工具，**全量提交**（漏字段=清空；仅 timeout/onlyOriginalKeys 例外：漏传=保留原值）。先 get 读回（读回即三段式，可直接改后提交） |
 | `mcp_tool_list` | mcpId（可选 keyword/cursor/pageSize） | `tools`(array，元素含 `toolId`/status 三态) + 分页三字段 | status：`draft` / `published` / `published_with_draft`（有未发布新草稿，versionId 指草稿） |

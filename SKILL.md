@@ -45,6 +45,7 @@ description: 从 API 接口材料搭建钉钉 MCP 服务与工具：建服务、
 - **`references/api-to-tool.md`** —— 三段式工具定义结构（11 项必填契约）+ 怎么从 OpenAPI/Postman/curl 拆字段 + description 规范。**拆解材料/建工具时读**。
 - **`references/mapping-rules.md`** —— inputMappings/outputMappings 的格式（JSONPath、Pascal 位置名、reference/fixed/express、出参整体透传与字段级精修、系统参数全集）。**写映射前必读**，这是最容易踩坑的地方。
 - **`references/auth-credentials.md`** —— 5 种鉴权类型的配置与凭证账号全流程（auth_config → credential → debug 带 credentialId → bind）。**接口带鉴权时必读**。
+- **`references/troubleshooting.md`** —— 排障分诊手册：debug 五字段判据表、三条禁止、六类症状的成因与修法、看下游真实返回的透传探针。**debug 结果不符合预期时必读**，先分诊再动手。
 - **`references/expression-functions.md`** —— express 表达式函数全集（7 组 82 个）。只有做复杂数据变换时才查，日常用不到。
 - **`scripts/mcp_call.py`** —— 直连新建 MCP 端点列/调工具的脚本，验证步骤用。
 
@@ -70,12 +71,25 @@ description: 从 API 接口材料搭建钉钉 MCP 服务与工具：建服务、
 逐个 `mcp_tool_create_http(mcpId, name, title, description, httpInfo, apiInputs, toolInputs, inputMappings, apiOutputs, toolOutputs, outputMappings)` → 出参顶层拿到 **toolId**（`G-ACT-*`）。可选 `timeout`（1-180 秒，⚠️设置后无法清回系统默认）/`onlyOriginalKeys`。**先建最简单的一个**，`mcp_tool_get` 读回核对（rules 位置名对不对、映射条数对不对），结构没问题再建其余。每建一个 `mcp_tool_list` 反查一个，失败即停。
 
 ### Step 6 · 调试（发布前必做，抓映射错误）
-逐个 `mcp_tool_debug(mcpId, toolId, value=<建议测试入参>)` 真跑（value 直接是入参对象，不要包 Body 层；**带鉴权必须传 credentialId**；改过已发布工具则必须显式传草稿 versionId）：
-- 映射后结果看返回**顶层 `toolOutput`**，映射前原始响应在 `rawOutput`——两者对比可直接验证出参映射；
-- 校验返回的是**真实业务数据**（不是只看没报错）——比如查北京要真返回经纬度；
-- 映射类改动 debug 全绿后，建议让服务 owner 在管理台 UI 目视一眼出/入参映射页（UI 校验与运行时不同源，「变量已失效」/数组子字段空只有 UI 能暴露）；
-- 失败（缺参/映射没生效）→ 大概率是映射位置名大小写（mapping-rules.md §3）或漏映射 → `mcp_tool_update_http` 修（全量提交，先 get 读回）→ 再 debug；同一工具最多自动修 2 轮，仍不行升级给用户；
-- 写操作类工具 debug 会真实写入下游 → 先让用户指定测试资源。
+
+**6.1 真跑**：逐个 `mcp_tool_debug(mcpId, toolId, value=<建议测试入参>)`（value 直接是入参对象，不要包 Body 层；**带鉴权必须传 credentialId**；改过已发布工具则必须显式传草稿 versionId）。`value` 要传符合 toolInputs 的**真实测试入参，不要传空 `{}` 走过场**。写操作类工具会真实写入下游 → 先让用户指定测试资源。
+
+**6.2 判读（每次 debug 后必做，不能跳过）**：返回顶层五字段 `executeSuccess` / `toolOutput` / `rawOutput` / `toolInput` / `time`。**`executeSuccess` 是分水岭**，先按下表定性，再决定改什么：
+
+| 观察 | 结论 | 去哪 |
+|---|---|---|
+| `executeSuccess=false`，`errorCode: 7000015` | 连不上 / 超时 | troubleshooting.md §3 |
+| `executeSuccess=false`，`errorCode: api_business_error` | 下游 HTTP 非 200（errorMessage 里带完整响应） | troubleshooting.md §3 |
+| `executeSuccess=true`，`toolOutput` 为 `{}` | **出参配置问题，与网络无关** | troubleshooting.md §4 |
+| `executeSuccess=true`，`toolOutput` 是 `{"Body":{…}}` 多包一层 | `outputMappings` 传了 `[]` | mapping-rules.md §5 |
+| `executeSuccess=true`，有数据但不是预期业务数据 | 入参没传对 / 下游业务报错 | troubleshooting.md §5 |
+| `executeSuccess=true`，返回**真实业务数据** | ✅ 通过（查北京要真返回经纬度——「没报错」不算过） | 进 6.3 |
+
+⚠️ **`rawOutput` 不是映射前的原始响应**：它是映射结果外包一层 `Body`，映射取不到值时同样是 `{"Body":{}}`。**不要拿它当「下游返回了什么」的证据**。要看下游真实返回，用 troubleshooting.md §4 的透传探针。
+
+⛔ `executeSuccess=true` 时**禁止提出任何网络类推测**（改域名 / 换 IP / DNS / 防火墙 / SSRF）——`true` 即 HTTP 往返已完成、下游已响应。内网地址与解析不了的域名在 Step 5 建工具时就被 `unsafe_domain_url` 拒了，根本到不了这里。
+
+**6.3 修复与收敛**：映射类问题按 mapping-rules.md 修 → `mcp_tool_update_http`（全量提交，先 `mcp_tool_get` 读回）→ 再 debug。**同一工具同一症状连续 2 次不通就停手**，按 troubleshooting.md 分诊后向用户报告「已排除项 + 待确认项 + 需要用户提供什么」，禁止继续盲试。映射类改动全绿后，建议让服务 owner 在管理台 UI 目视一眼出/入参映射页（UI 校验与运行时不同源，「变量已失效」/数组子字段空只有 UI 能暴露）。
 
 ### Step 7 · 发布（强制闸门）
 **debug 全通过 ≠ 任务完成**——用户目标含「让我能调用 / 给 agent 用」时，此刻只是进入**待发布确认**状态：向用户复述「将发布哪些工具、发布后你企业内全员即可调用」，获得**明确同意**（「嗯/继续」不算）；确认到来前的每次汇报都要带「仍未发布、客户端不可用」。带鉴权的服务，**先 `mcp_credential_bind(mcpId, credentialId)` 绑定生效凭证，再逐个 `mcp_tool_publish(mcpId, toolId)` 发布**——顺序不能反：反了发布实例卡草稿态、取不到接入地址且**不可恢复**（只能重建工具重发布）。无鉴权服务直接逐个 publish。
@@ -104,3 +118,4 @@ description: 从 API 接口材料搭建钉钉 MCP 服务与工具：建服务、
 6. **凭证纪律**：`?key=` 与密钥只进 client 配置/平台凭证/命令行入参，禁止写文件、禁止回复复读；密钥保存后平台不回显。
 7. **参数不猜**：布尔/枚举/鉴权方式不确定就问用户。
 8. 同类操作连续失败 3 次 → 停下汇总给用户，不空转。
+9. **排障先分诊后动手**：debug 结果异常时先按 Step 6.2 判据表定性，再改东西。`executeSuccess=true` 时禁止任何网络类推测（改域名/换 IP/DNS/防火墙/SSRF）——那是 `executeSuccess=false` 才需要考虑的分支。同一症状连续 2 次不通即停手报告，不靠反复试错撞答案。
