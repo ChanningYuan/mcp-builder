@@ -82,6 +82,7 @@ description: 从 API 接口材料搭建钉钉 MCP 服务与工具：建服务、
 | `executeSuccess=false`，`errorCode: api_business_error` | 下游 HTTP 非 200（errorMessage 里带完整响应） | troubleshooting.md §3 |
 | `executeSuccess=true`，`toolOutput` 为 `{}` | **出参配置问题，与网络无关** | troubleshooting.md §4 |
 | `executeSuccess=true`，`toolOutput` 是 `{"Body":{…}}` 多包一层 | `outputMappings` 传了 `[]` | mapping-rules.md §5 |
+| `executeSuccess=true`，下游回「缺少 xxx / xxx 不能为空」 | 入参映射没生效——**头号嫌疑：请求头位置名写成了 `Head`，必须是 `Headers`（复数）** | troubleshooting.md §5 |
 | `executeSuccess=true`，有数据但不是预期业务数据 | 入参没传对 / 下游业务报错 | troubleshooting.md §5 |
 | `executeSuccess=true`，返回**真实业务数据** | ✅ 通过（查北京要真返回经纬度——「没报错」不算过） | 进 6.3 |
 
@@ -114,7 +115,7 @@ description: 从 API 接口材料搭建钉钉 MCP 服务与工具：建服务、
 2. **发布前必调试**：每个工具 `mcp_tool_debug` 真跑通过才允许 publish——防映射错误上线。
 3. **调草稿传 versionId、带鉴权传 credentialId**：违者 debug 结果是假阳性（测的是旧版本/无鉴权降级）。
 4. **读回优先**：`mcp_tool_update_http` 前必 `mcp_tool_get` 读回现状再改（全量覆盖，漏字段=清字段；仅 timeout/onlyOriginalKeys 例外漏传=保留）。读回即三段式（含 httpInfo），可直接在读回基础上改后提交。
-5. **映射位置名 Pascal**：`$.Query`/`$.Body` 不是 `$.QUERY`/`$.query`——写错静默失效（mapping-rules.md §3）。
+5. **映射位置名 Pascal + 请求头必须复数**：合法值只有 `$.Body` / `$.Query` / `$.Path` / **`$.Headers`**。`$.QUERY`、`$.query`、以及 **`$.Head`（单数）** 全都静默失效、值被直接丢弃，症状是下游报缺参数（mapping-rules.md §3）。响应头 key 运行时全小写，`apiOutputs.headers` 要声明成 `set-cookie` 这种小写形态（mapping-rules.md §5）。
 6. **凭证纪律**：`?key=` 与密钥只进 client 配置/平台凭证/命令行入参，禁止写文件、禁止回复复读；密钥保存后平台不回显。
 7. **参数不猜**：布尔/枚举/鉴权方式不确定就问用户。
 8. 同类操作连续失败 3 次 → 停下汇总给用户，不空转。

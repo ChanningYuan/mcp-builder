@@ -34,7 +34,7 @@
 
 **入参映射（inputMappings）**：
 - `source`：`$.node_start.<toolInput 的 key>` —— 引用用户传给工具的参数。
-- `target`：`$.<位置>.<接口字段>` —— 写到接口的哪个参数位置。位置 = `Body` / `Query` / `Head` / `Path`（见 §3）。
+- `target`：`$.<位置>.<接口字段>` —— 写到接口的哪个参数位置。位置 = `Body` / `Query` / **`Headers`** / `Path`（见 §3）。⚠️ 请求头是 **`Headers`（复数）**，写 `Head` 静默失效。
 
 **出参映射（outputMappings）**：
 - `source`：`$.node_service_activator.Body`（接口响应体）/ `$.node_service_activator.Headers`（响应头）。
@@ -42,16 +42,33 @@
 
 系统身份变量：`source` 用 `$.system_node.operateUserId` / `$.system_node.ddDataCorpId`（见 §6）。
 
-## 3. 位置名必须 Pascal 大小写（最大的坑）
+## 3. 位置名：Pascal 大小写 + 请求头必须复数（最大的坑）
 
-`target` 里的位置名 **必须首字母大写**：`Body` / `Query` / `Head` / `Path`。
+`target` 里的位置名只有四个合法值，**首字母大写，且请求头是复数 `Headers`**：
 
-- ✅ 正确：`$.Query.name`、`$.Body.userId`
-- ❌ 错误：`$.QUERY.name`（全大写）、`$.query.name`（全小写）——**静默失效**：不报错、但值不会流转，接口收到空参数。
+| 位置 | 合法写法 | 说明 |
+|---|---|---|
+| 请求体 | `$.Body.<字段>` | |
+| 查询串 | `$.Query.<字段>` | |
+| **请求头** | **`$.Headers.<字段>`** | ⚠️ **复数**。写 `$.Head.…` 一律静默失效 |
+| 路径参数 | `$.Path.<字段>` | |
 
-这一条最坑，因为写错了平台不报错，只有真跑（`mcp_tool_debug`）才会暴露（接口报缺参数）。建完工具**必须 debug 验证**，就是为了抓这个。
+**逐组实证（httpbin 回显验证，写错的一律不报错、值直接丢弃）**：
 
-> 注：`apiInputs` 分组的 key 是全大写（`QUERY`/`BODY`/`HEAD`/`PATH`），但映射 `target` 路径里用 Pascal（`Query`/`Body`）。两处大小写不同，别混。
+| 写法 | 请求头真的发出去了吗 |
+|---|---|
+| `$.Head['X-AuthToken']` | ❌ 无 |
+| `$.Head.X-AuthToken` | ❌ 无 |
+| `$.Head.XAuthToken`（连字符都不带） | ❌ 无 |
+| `$.Headers['X-AuthToken']` | ✅ |
+| `$.Headers.X-AuthToken` | ✅ |
+| `$.Headers.XAuthToken` | ✅ |
+
+注意第三行：**不带连字符也失效**——问题在 `Head` 这个位置名本身，不在字段名。同理 `$.QUERY.name`（全大写）、`$.query.name`（全小写）也都静默失效。
+
+这一类错误平台完全不报错，只有真跑（`mcp_tool_debug`）才暴露，且症状是**下游报「缺少某参数」**（因为它确实没收到）。看到下游说缺参，第一件事是核对位置名，不是怀疑网络或改传参方式。
+
+> 注：`apiInputs` 分组的 key 用**小写复数** `query` / `body` / `path` / `headers`（见 api-to-tool.md §2），而映射 `target` 路径里用 Pascal 的 `Query` / `Body` / `Path` / `Headers`。两处写法不同，但**请求头两边都是复数**。
 
 ## 4. 三种映射类型：reference / fixed / express
 
@@ -122,6 +139,26 @@
 1. **省略或传 `[]` 不报错**：工具能建成、运行时返回整包响应体且**多包一层 Body**（`{"Body":{…}}`，无裁剪）——不推荐，请显式选 A 或 B。
 2. **source 必须落在 apiOutputs 声明范围内**：apiOutputs 按 schema 精确裁剪——**漏声明的字段被整段吞掉**（调用"成功"但业务数据残缺且不报错，实测曾出现整个数组字段无声消失），同时 UI 标「变量已失效」。`apiOutputs` 必须如实声明到被映射的**最深层级**。
    ⚠️ **注意区分**：`apiOutputs.body` 传**空数组 `[]`**（完全不声明）反而是**不裁剪、整包透传**——只有「声明了但不全」才会吞。两者行为相反：前者是排障时把下游真实返回捞出来的透传探针（troubleshooting.md §4），后者是本条说的坑。别记混。
+
+### 取响应头（Headers）：两条硬规则
+
+**规则 1 · 运行时响应头 key 全部小写化。** `apiOutputs.headers` 必须用**小写** key 声明，映射 source 也用小写：
+
+```json
+"apiOutputs":     { "headers": [ { "key": "set-cookie", "type": "string", "title": "会话Cookie", "description": "…" } ], "body": [ … ] }
+"outputMappings": [ { "type": "reference", "source": "$.node_service_activator.Headers['set-cookie']", "target": "$.session_cookie" } ]
+```
+
+声明成 `Set-Cookie`（大写驼峰）会与运行时的 `set-cookie` 对不上、被裁成空——实测声明大写后，连整体映射 `$.node_service_activator.Headers` 都返回 `{}`。不确定下游返回哪些头，先用本节的透传探针（`apiOutputs` 两组都传 `[]` + 整体映射）把真实的小写键名列出来再写。
+
+**规则 2 · 带连字符等特殊字符的字段名一律用方括号**——不是因为点号写不了，而是两者**失败模式**天差地别：
+
+| source 写法 | 路径取得到时 | 路径取不到时 |
+|---|---|---|
+| 点号 `…Headers.set-cookie` | ✅ 正常取值 | ❌ **整条 outputMappings 数组全部失效**——同数组里完全正确的规则也一起变空，工具返回 `{}` |
+| 方括号 `…Headers['set-cookie']` | ✅ 正常取值 | ❌ 仅该条为空，其余规则照常返回 |
+
+点号一旦解析失败就**连坐**，症状是"什么都没配"式的整体空，极难定位；方括号把故障隔离在单条，一眼就能看出是哪个字段没取到。**凡是 key 含 `-` / `.` / 空格等特殊字符，一律方括号。**
 
 **debug 判读位**：`mcp_tool_debug` 的映射后结果在返回顶层的 **`toolOutput`** 字段，`executeSuccess` 是「下游通没通」的分水岭。⚠️ **`rawOutput` 不是映射前的原始响应**——它是映射结果外包一层 `Body`，出参映射取不到值时它同样是 `{"Body":{}}`，**不能拿它判断下游返回了什么**；要看下游真实返回，用 `troubleshooting.md` §4 的透传探针。完整判据表见 `troubleshooting.md` §1。⚠️ debug 全绿不代表 UI 无标红（UI 校验与运行时引擎不同源）——映射类改动最后让服务 owner 在管理台 UI 目视一眼出/入参映射页。
 
